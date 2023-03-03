@@ -58,6 +58,7 @@
 #include "uart.h"
 #include "timer2-free-run.h"
 #include "encoder.h"
+#include "i2c.h"
 
 #define GREENLED LATBbits.LATB5
 
@@ -71,6 +72,7 @@ int main(void)
     GREENLED = 0;
     init_encoders();
     uart1_init(115200);
+    i2c1_init();
     timer2_init(15, 8); // 15 * 2.064ms * 8 = 248ms period
     //
     n = printf("\r\nMagnetic encoder readout.");

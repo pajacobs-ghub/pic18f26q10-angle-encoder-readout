@@ -1,19 +1,20 @@
 // uart.c
-// Functions to provide a shim between the C90 standard library functions
+// Functions to provide a shim between the C standard library functions
 // and UART1 peripheral device on the PIC16F1/PIC18FxxQ10 microcontroller.
-// Build with linker set to link in the C90 standard library.
+// Build with linker set to link in the C99 standard library.
 // PJ,
 // 2018-12-28 Adapted from PIC16F1778 example.
 // 2018-12-30 RTS/CTS flow control
 // 2019-03-06 Adapted to PIC16F18324
 // 2019-04-15 PIC16F18426
 // 2023-02-03 PIC18F26Q10 for magnetic encoder readout
+// 2023-03-03 change to linking with C99 library
 
 #include <xc.h>
 #include "global_defs.h"
 #include "uart.h"
 #include <stdio.h>
-#include <conio.h>
+// #include <conio.h> // no longer used for C99
 
 void uart1_init(long baud)
 {
