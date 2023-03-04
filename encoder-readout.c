@@ -62,6 +62,28 @@
 
 #define GREENLED LATBbits.LATB5
 
+// Things needed for the I2C-LCD
+#define NCBUF 16
+static char char_buffer[NCBUF];
+#define ADDR 0x51
+
+void display_to_lcd(uint16_t a, uint16_t b)
+{
+    int n;
+    uint8_t* cptr;
+    // Return to home position
+    char_buffer[0] = 0xfe; char_buffer[1] =  0x46;
+    n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
+    __delay_ms(5); // Give the LCD time
+    n = sprintf(char_buffer, "A:%4u B:%4u", a, b);
+    for (uint8_t i=0; i < NCBUF; ++i) {
+        cptr = (uint8_t*)&char_buffer[i];
+        if (*cptr == 0) break;
+        n = i2c1_write(ADDR, 1, cptr);
+        __delay_us(500); // Give the LCD time
+    }
+}
+
 int main(void)
 {
     int n;
@@ -73,13 +95,21 @@ int main(void)
     init_encoders();
     uart1_init(115200);
     i2c1_init();
-    timer2_init(15, 8); // 15 * 2.064ms * 8 = 248ms period
+    __delay_ms(50); // Let the LCD get itself sorted at power-up.
+    // Clear the LCD
+    char_buffer[0] = 0xfe; char_buffer[1] =  0x51;
+    n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
+    __delay_ms(5); // Give the LCD time
+    timer2_init(2*15, 8); // 15 * 2.064ms * 8 = 248ms period
     //
     n = printf("\r\nMagnetic encoder readout.");
     timer2_wait();
     while (1) {
         read_encoders(&a, &b);
-        n = printf("\r\n%u %u", a, b);
+        n = printf("\r\n%4u %4u", a, b);
+        display_to_lcd(a, b);
+        uint8_t err = i2c1_get_error_flag();
+        if (err) { printf("  i2c err=%u", err); }
         // Light LED to indicate slack time.
         // We can use the oscilloscope to measure the slack time,
         // in case we don't allow enough time for the tasks.

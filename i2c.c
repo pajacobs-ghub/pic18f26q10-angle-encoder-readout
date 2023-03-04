@@ -23,7 +23,7 @@ void i2c1_init(void)
     PPSLOCK = 0xaa;
     PPSLOCKED = 0;
     SSP1CLKPPS = 0b10011; // RC3
-    RC3PPS = 0x13; // MSSP1 SCL
+    RC3PPS = 0x0f; // MSSP1 SCL
     SSP1DATPPS = 0b10100; // RC4
     RC4PPS = 0x10; // MSSP1 SDA
     PPSLOCK = 0x55;
@@ -31,7 +31,7 @@ void i2c1_init(void)
     PPSLOCKED = 1;
     ANSELCbits.ANSELC3 = 0; // allow digital input
     ANSELCbits.ANSELC4 = 0;
-    TRISCbits.TRISC3 = 1;
+    TRISCbits.TRISC3 = 1; // Set to input, as per data sheet instructions.
     TRISCbits.TRISC4 = 1;
     // Configure module
     SSP1STATbits.SMP = 1; // Disable slew-rate control for 100kHz
