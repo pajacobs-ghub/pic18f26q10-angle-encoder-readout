@@ -63,7 +63,7 @@
 #define GREENLED LATBbits.LATB5
 
 // Things needed for the I2C-LCD
-#define NCBUF 16
+#define NCBUF 20
 static char char_buffer[NCBUF];
 #define ADDR 0x51
 
@@ -71,16 +71,16 @@ void display_to_lcd(uint16_t a, uint16_t b)
 {
     int n;
     uint8_t* cptr;
-    // Return to home position
-    char_buffer[0] = 0xfe; char_buffer[1] =  0x46;
-    n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
-    __delay_ms(5); // Give the LCD time
-    n = sprintf(char_buffer, "A:%4u B:%4u", a, b);
+    // Set cursor to DDRAM address 0
+    char_buffer[0] = 0xfe; char_buffer[1] = 0x45; char_buffer[2] = 0x00;
+    n = i2c1_write(ADDR, 3, (uint8_t*)char_buffer);
+    __delay_ms(3); // Give the LCD time
+    n = sprintf(char_buffer, "A:%4u B:%4u    ", a, b);
     for (uint8_t i=0; i < NCBUF; ++i) {
         cptr = (uint8_t*)&char_buffer[i];
         if (*cptr == 0) break;
         n = i2c1_write(ADDR, 1, cptr);
-        __delay_us(500); // Give the LCD time
+        __delay_ms(2); // Give the LCD time
     }
 }
 
@@ -88,6 +88,8 @@ int main(void)
 {
     int n;
     uint16_t a, b;
+    uint8_t lcd_count_display = 0;
+    uint8_t lcd_count_clear = 0;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
     TRISBbits.TRISB5 = 0; // Pin as output for LED.
@@ -96,18 +98,35 @@ int main(void)
     uart1_init(115200);
     i2c1_init();
     __delay_ms(50); // Let the LCD get itself sorted at power-up.
-    // Clear the LCD
-    char_buffer[0] = 0xfe; char_buffer[1] =  0x51;
-    n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
-    __delay_ms(5); // Give the LCD time
-    timer2_init(2*15, 8); // 15 * 2.064ms * 8 = 248ms period
+    timer2_init(15, 8); // 15 * 2.064ms * 8 = 248ms period
     //
     n = printf("\r\nMagnetic encoder readout.");
     timer2_wait();
     while (1) {
         read_encoders(&a, &b);
         n = printf("\r\n%4u %4u", a, b);
-        display_to_lcd(a, b);
+        if (lcd_count_clear == 0) {
+            // Clear the LCD very occasionally because we will
+            // sometimes get bad data sent via the I2C bus.
+            // Bad data should not happen, however,
+            // the dangly wires on the prototype boards
+            // are a potential source of trouble.
+            char_buffer[0] = 0xfe; char_buffer[1] =  0x51;
+            n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
+            __delay_ms(10); // Give the LCD time
+            lcd_count_clear = 120;
+        } else {
+            lcd_count_clear--;
+        }
+        if (lcd_count_display == 0) {
+            // Occasionally write the new data to the LCD.
+            // We want this fast enough to inform the operator
+            // of change but not too fast to be unreadable.
+            display_to_lcd(a, b);
+            lcd_count_display = 4;
+        } else {
+            lcd_count_display--;
+        }
         uint8_t err = i2c1_get_error_flag();
         if (err) { printf("  i2c err=%u", err); }
         // Light LED to indicate slack time.
