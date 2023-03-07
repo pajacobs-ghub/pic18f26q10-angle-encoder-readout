@@ -59,8 +59,13 @@
 #include "timer2-free-run.h"
 #include "encoder.h"
 #include "i2c.h"
+#include "spi-max7219.h"
 
 #define GREENLED LATBbits.LATB5
+#define SW0 PORTAbits.RA0
+#define SW1 PORTAbits.RA1
+#define SW2 PORTAbits.RA2
+#define SW3 PORTAbits.RA3
 
 // Things needed for the I2C-LCD
 #define NCBUF 20
@@ -90,45 +95,77 @@ int main(void)
     uint16_t a, b;
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
+    uint8_t use_uart = 1;
+    uint8_t with_rts_cts = 1;
+    uint8_t use_i2c_lcd = 1;
+    uint8_t use_spi_led_display = 0;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
     TRISBbits.TRISB5 = 0; // Pin as output for LED.
     GREENLED = 0;
+    //
+    // Configure the board by looking at the state of the switches.
+    TRISAbits.TRISA0 = 1; ANSELAbits.ANSELA0 = 0; WPUAbits.WPUA0 = 1; // Input SW0
+    TRISAbits.TRISA1 = 1; ANSELAbits.ANSELA1 = 0; WPUAbits.WPUA1 = 1; // Input SW1
+    TRISAbits.TRISA2 = 1; ANSELAbits.ANSELA2 = 0; WPUAbits.WPUA2 = 1; // Input SW2
+    TRISAbits.TRISA3 = 1; ANSELAbits.ANSELA3 = 0; WPUAbits.WPUA3 = 1; // Input SW3
+    if (SW0) { use_uart = 1; } else { use_uart = 0; }
+    if (SW1) { with_rts_cts = 1; } else { with_rts_cts = 0; }
+    if (SW2) { use_i2c_lcd = 1; } else { use_i2c_lcd = 0; }
+    if (SW3) { use_spi_led_display = 1; } else { use_spi_led_display = 0; }
+    //
+    // Initialize the peripherals that are in play.
     init_encoders();
-    uart1_init(115200);
-    i2c1_init();
-    __delay_ms(50); // Let the LCD get itself sorted at power-up.
+    if (use_uart) {
+        uart1_init(115200);
+        n = printf("\r\nMagnetic encoder readout.");
+    }
+    if (use_i2c_lcd) {
+        i2c1_init();
+        __delay_ms(50); // Let the LCD get itself sorted at power-up.
+    }
+    if (use_spi_led_display) {
+        spi2_init();
+        max7219_init();
+    }
     timer2_init(15, 8); // 15 * 2.064ms * 8 = 248ms period
     //
-    n = printf("\r\nMagnetic encoder readout.");
     timer2_wait();
     while (1) {
         read_encoders(&a, &b);
-        n = printf("\r\n%4u %4u", a, b);
-        if (lcd_count_clear == 0) {
-            // Clear the LCD very occasionally because we will
-            // sometimes get bad data sent via the I2C bus.
-            // Bad data should not happen, however,
-            // the dangly wires on the prototype boards
-            // are a potential source of trouble.
-            char_buffer[0] = 0xfe; char_buffer[1] =  0x51;
-            n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
-            __delay_ms(10); // Give the LCD time
-            lcd_count_clear = 120;
-        } else {
-            lcd_count_clear--;
+        if (use_uart) {
+            n = printf("\r\n%4u %4u", a, b);
         }
-        if (lcd_count_display == 0) {
-            // Occasionally write the new data to the LCD.
-            // We want this fast enough to inform the operator
-            // of change but not too fast to be unreadable.
-            display_to_lcd(a, b);
-            lcd_count_display = 4;
-        } else {
-            lcd_count_display--;
+        if (use_i2c_lcd) {
+            if (lcd_count_clear == 0) {
+                // Clear the LCD very occasionally because we will
+                // sometimes get bad data sent via the I2C bus.
+                // Bad data should not happen, however,
+                // the dangly wires on the prototype boards
+                // are a potential source of trouble.
+                char_buffer[0] = 0xfe; char_buffer[1] =  0x51;
+                n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
+                __delay_ms(10); // Give the LCD time
+                lcd_count_clear = 120;
+            } else {
+                lcd_count_clear--;
+            }
+            if (lcd_count_display == 0) {
+                // Occasionally write the new data to the LCD.
+                // We want this fast enough to inform the operator
+                // of change but not too fast to be unreadable.
+                display_to_lcd(a, b);
+                lcd_count_display = 4;
+            } else {
+                lcd_count_display--;
+            }
+            uint8_t err = i2c1_get_error_flag();
+            if (err && use_uart) { printf("  i2c err=%u", err); }
+        } // if (use_i2c_lcd)
+        if (use_spi_led_display) {
+            max7219_init();
         }
-        uint8_t err = i2c1_get_error_flag();
-        if (err) { printf("  i2c err=%u", err); }
+        //
         // Light LED to indicate slack time.
         // We can use the oscilloscope to measure the slack time,
         // in case we don't allow enough time for the tasks.
@@ -137,6 +174,6 @@ int main(void)
         GREENLED = 0;
     }
     timer2_close();
-    uart1_close();
+    if (use_uart) uart1_close();
     return 0; // Expect that the MCU will reset.
 } // end main
