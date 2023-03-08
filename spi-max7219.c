@@ -63,19 +63,25 @@ void max7219_init(void)
     spi2_write(0x0a, 0x01); // intensity register: small
     spi2_write(0x0b, 0x07); // scan limit: display all digits
     spi2_write(0x09, 0xff); // decode mode: Code B decode all digits
-    spi2_write(0x01, 0x00); // digit 1
-    spi2_write(0x02, 0x01); // digit 2
-    spi2_write(0x03, 0x02); // digit 3
-    spi2_write(0x04, 0x03); // digit 4
-    spi2_write(0x05, 0x04); // digit 5
-    spi2_write(0x06, 0x05); // digit 6
-    spi2_write(0x07, 0x06); // digit 7
-    spi2_write(0x08, 0x07); // digit 8
+    // Display 76543210
+    // Digits are numbered 1 through 8, starting from the right.
+    for (uint8_t i=0; i < 8; ++i) {
+        spi2_write(i+1, i);
+    }
 }
 
 
 void spi2_led_display(uint16_t a, uint16_t b)
 {
-    spi2_write(0x0b, 0x07); // display all digits
-    spi2_write(0x01, 0x00); // digit 1
+    // Display aaaa bbbb decimal digits.
+    uint8_t digits[8];
+    uint16_t val_b = b;
+    uint16_t val_a = a;
+    for (uint8_t i=0; i < 4; ++i) {
+        digits[i] = val_b % 10; val_b /= 10;
+        digits[i+4] = val_a % 10; val_a /= 10;
+    }
+    for (uint8_t i=0; i < 8; ++i) {
+        spi2_write(i+1, digits[i]);
+    }
 }

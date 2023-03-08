@@ -1,6 +1,7 @@
 // encoder-readout.c
-// Read the magnetic encoder position and report via the serial port.
-// PJ 2023-02-05
+// Read the magnetic encoder position and report via the serial port
+// and a display (LCD and/or 7-segment LED)
+// PJ 2023-02-05, 2023-03-08
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -95,6 +96,7 @@ int main(void)
     uint16_t a, b;
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
+    uint8_t led_count_display = 0;
     uint8_t use_uart = 1;
     uint8_t with_rts_cts = 1;
     uint8_t use_i2c_lcd = 1;
@@ -118,6 +120,7 @@ int main(void)
     init_encoders();
     if (use_uart) {
         uart1_init(115200);
+        __delay_ms(10); // Need a bit of delay to not miss the first characters.
         n = printf("\r\nMagnetic encoder readout.");
     }
     if (use_i2c_lcd) {
@@ -161,11 +164,15 @@ int main(void)
             }
             uint8_t err = i2c1_get_error_flag();
             if (err && use_uart) { printf("  i2c err=%u", err); }
-        } // if (use_i2c_lcd)
-        if (use_spi_led_display) {
-            max7219_init();
         }
-        //
+        if (use_spi_led_display) {
+            if (led_count_display == 0) {
+                spi2_led_display(a, b);
+                led_count_display = 2;
+            } else {
+                led_count_display--;
+            }
+        }
         // Light LED to indicate slack time.
         // We can use the oscilloscope to measure the slack time,
         // in case we don't allow enough time for the tasks.
