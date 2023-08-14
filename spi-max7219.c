@@ -71,13 +71,34 @@ void max7219_init(void)
 }
 
 
-void spi2_led_display(uint16_t a, uint16_t b)
+void spi2_led_display_unsigned(uint16_t a, uint16_t b)
 {
     // Display aaaa bbbb decimal digits.
     uint8_t digits[8];
     uint16_t val_b = b;
     uint16_t val_a = a;
     for (uint8_t i=0; i < 4; ++i) {
+        digits[i] = val_b % 10; val_b /= 10;
+        digits[i+4] = val_a % 10; val_a /= 10;
+    }
+    for (uint8_t i=0; i < 8; ++i) {
+        spi2_write(i+1, digits[i]);
+    }
+}
+
+void spi2_led_display_signed(int16_t a, int16_t b)
+{
+    // Display SaaaSbbb signed decimal numbers
+    //         76543210
+    // Assuming that we are given two 3-digit numbers.
+    uint8_t digits[8];
+    uint16_t val_b = abs(b);
+    uint16_t val_a = abs(a);
+    // Use BCD Code B 0x0a for negative sign or 0x0f for blank.
+    digits[3] = (b < 0) ? 0x0a : 0x0f;
+    digits[7] = (a < 0) ? 0x0a : 0x0f;
+    // Generate three digits for each number.
+    for (uint8_t i=0; i < 3; ++i) {
         digits[i] = val_b % 10; val_b /= 10;
         digits[i+4] = val_a % 10; val_a /= 10;
     }

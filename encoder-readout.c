@@ -3,6 +3,10 @@
 // and a display (LCD and/or 7-segment LED)
 // PJ 2023-02-05, 2023-03-08
 // PJ 2023-08-13 Update to include reading of AS5600 encoder.
+// PJ 2023-08-14 Get the output displaying values in degrees.
+//
+// This version string will be printed shortly after MCU reset.
+#define VERSION_STR "\r\nv1.0 2023-08-14"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -68,6 +72,8 @@
 #define SW1 PORTAbits.RA1
 #define SW2 PORTAbits.RA2
 #define SW3 PORTAbits.RA3
+#define PUSHBUTTONA PORTBbits.RB4
+#define PUSHBUTTONB PORTCbits.RC1
 
 // Things needed for the I2C-LCD and AS5600 encoder
 #define NCBUF 20
@@ -75,7 +81,7 @@ static char char_buffer[NCBUF];
 #define ADDR_LCD 0x51
 #define ADDR_AS5600 0x36
 
-void display_to_lcd(uint16_t a, uint16_t b)
+void display_to_lcd_unsigned(uint16_t a, uint16_t b)
 {
     int n;
     uint8_t* cptr;
@@ -95,7 +101,12 @@ void display_to_lcd(uint16_t a, uint16_t b)
 int main(void)
 {
     int n;
-    uint16_t a, b;
+    uint16_t a_raw, b_raw;
+    uint16_t a_ref = 0;
+    uint16_t b_ref = 0;
+    int16_t a_signed, b_signed;
+    int32_t big; // working variable for scaling to degrees
+    //
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
     uint8_t led_count_display = 0;
@@ -110,6 +121,8 @@ int main(void)
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
     TRISBbits.TRISB5 = 0; // Pin as output for LED.
     GREENLED = 0;
+    TRISBbits.TRISB4 = 1; ANSELBbits.ANSELB4 = 0; WPUBbits.WPUB4 = 1; // PUSHBUTTONA
+    TRISCbits.TRISC1 = 1; ANSELCbits.ANSELC1 = 0; WPUCbits.WPUC1 = 1; // PUSHBUTTONB
     //
     // Configure the board by looking at the state of the switches.
     TRISAbits.TRISA0 = 1; ANSELAbits.ANSELA0 = 0; WPUAbits.WPUA0 = 1; // Input SW0
@@ -127,6 +140,7 @@ int main(void)
         uart1_init(115200);
         __delay_ms(10); // Need a bit of delay to not miss the first characters.
         n = printf("\r\nMagnetic encoder readout.");
+        n = printf(VERSION_STR);
     }
     if (use_i2c_lcd || use_i2c_AS5600) {
         i2c1_init();
@@ -140,16 +154,54 @@ int main(void)
     //
     timer2_wait();
     while (1) {
-        read_AEAT_encoders(&a, &b);
+        // 1. Read the raw values from the sensors.
+        read_AEAT_encoders(&a_raw, &b_raw);
         if (use_i2c_AS5600) {
             // We are going to replace reading A with the AS5600 data.
             char_buffer[0] = 0x0c; // RAW ANGLE register, high byte
             n = i2c1_write(ADDR_AS5600, 1, (uint8_t*)char_buffer);
             n = i2c1_read(ADDR_AS5600, 2, (uint8_t*)char_buffer);
-            a = ((uint16_t)(char_buffer[0] & 0x0f)<<8) | (uint16_t)char_buffer[1];
+            uint8_t err = i2c1_get_error_flag();
+            if (err && use_uart) { printf("  i2c err=%u", err); }
+            a_raw = ((uint16_t)(char_buffer[0] & 0x0f)<<8) | (uint16_t)char_buffer[1];
         }
+        // 2. If the push buttons are active (low), set the reference values.
+        if (PUSHBUTTONA == 0) {
+            a_ref = a_raw;
+            __delay_ms(1000);
+            n = printf("\r\na_ref = %4u", a_ref);
+        }
+        if (PUSHBUTTONB == 0) {
+            b_ref = b_raw;
+            __delay_ms(1000);
+            n = printf("\r\nb_ref = %4u", b_ref);
+        }
+        a_signed = (int16_t)a_raw - (int16_t)a_ref;
+        b_signed = (int16_t)b_raw - (int16_t)b_ref;
+        // 3. Convert to units of 1/10 degree.
+        big = (long)a_signed * 225;
+        if (use_i2c_AS5600) {
+            // AS5600 sensor range is 4096. 3600/4096 == 225/256
+            a_signed = (int16_t) (big/256);
+        } else {
+            // AEAT sensor range is 1024. 3600/1024 == 225/64
+            a_signed = (int16_t) (big/64);
+        }
+        // AEAT sensor range is 1024.
+        big = (long)b_signed * 225;
+        b_signed = (int16_t) (big/64);
+        // 4. Bring into -180 to 180 degree range by wrapping around.
+        if (a_signed < -1800) a_signed += 3600;
+        if (a_signed > 1800) a_signed -= 3600;
+        if (b_signed < -1800) b_signed += 3600;
+        if (b_signed > 1800) b_signed -= 3600;
+        //
+        // 5. Some output.
         if (use_uart) {
-            n = printf("\r\n%4u %4u", a, b);
+            n = printf("\r\n%4u %4u %4d.%1u %4d.%1u",
+                    a_raw, b_raw, 
+                    a_signed/10, abs(a_signed)%10,
+                    b_signed/10, abs(b_signed)%10);
         }
         if (use_i2c_lcd) {
             if (lcd_count_clear == 0) {
@@ -169,7 +221,7 @@ int main(void)
                 // Occasionally write the new data to the LCD.
                 // We want this fast enough to inform the operator
                 // of change but not too fast to be unreadable.
-                display_to_lcd(a, b);
+                display_to_lcd_unsigned(a_raw, b_raw);
                 lcd_count_display = 4;
             } else {
                 lcd_count_display--;
@@ -179,7 +231,9 @@ int main(void)
         }
         if (use_spi_led_display) {
             if (led_count_display == 0) {
-                spi2_led_display(a, b);
+                // spi2_led_display_unsigned(a_raw, b_raw);
+                // Display integral degrees only to 7-segment LED display.
+                spi2_led_display_signed(a_signed/10, b_signed/10);
                 led_count_display = 2;
             } else {
                 led_count_display--;
