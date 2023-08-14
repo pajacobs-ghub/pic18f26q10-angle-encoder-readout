@@ -12,7 +12,7 @@
 #define DI_A PORTAbits.RA6
 #define DI_B PORTAbits.RA7
 
-void init_encoders(void)
+void init_AEAT_encoders(void)
 {
     TRISAbits.TRISA4 = 0; // CSn output
     SLRCONAbits.SLRA4 = 1; // limit slew rate
@@ -32,7 +32,7 @@ void init_encoders(void)
     
 }
 
-void read_encoders(uint16_t *result_a, uint16_t *result_b)
+void read_AEAT_encoders(uint16_t *result_a, uint16_t *result_b)
 {
     uint8_t i;
     uint16_t bits_a, bits_b;

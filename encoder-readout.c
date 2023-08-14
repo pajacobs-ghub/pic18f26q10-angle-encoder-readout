@@ -2,6 +2,7 @@
 // Read the magnetic encoder position and report via the serial port
 // and a display (LCD and/or 7-segment LED)
 // PJ 2023-02-05, 2023-03-08
+// PJ 2023-08-13 Update to include reading of AS5600 encoder.
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -68,10 +69,11 @@
 #define SW2 PORTAbits.RA2
 #define SW3 PORTAbits.RA3
 
-// Things needed for the I2C-LCD
+// Things needed for the I2C-LCD and AS5600 encoder
 #define NCBUF 20
 static char char_buffer[NCBUF];
-#define ADDR 0x51
+#define ADDR_LCD 0x51
+#define ADDR_AS5600 0x36
 
 void display_to_lcd(uint16_t a, uint16_t b)
 {
@@ -79,13 +81,13 @@ void display_to_lcd(uint16_t a, uint16_t b)
     uint8_t* cptr;
     // Set cursor to DDRAM address 0
     char_buffer[0] = 0xfe; char_buffer[1] = 0x45; char_buffer[2] = 0x00;
-    n = i2c1_write(ADDR, 3, (uint8_t*)char_buffer);
+    n = i2c1_write(ADDR_LCD, 3, (uint8_t*)char_buffer);
     __delay_ms(3); // Give the LCD time
     n = sprintf(char_buffer, "A:%4u B:%4u    ", a, b);
     for (uint8_t i=0; i < NCBUF; ++i) {
         cptr = (uint8_t*)&char_buffer[i];
         if (*cptr == 0) break;
-        n = i2c1_write(ADDR, 1, cptr);
+        n = i2c1_write(ADDR_LCD, 1, cptr);
         __delay_ms(2); // Give the LCD time
     }
 }
@@ -97,10 +99,13 @@ int main(void)
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
     uint8_t led_count_display = 0;
+    //
+    // Default/expected configuration.
     uint8_t use_uart = 1;
     uint8_t with_rts_cts = 1;
-    uint8_t use_i2c_lcd = 1;
-    uint8_t use_spi_led_display = 0;
+    uint8_t use_i2c_lcd = 0;
+    uint8_t use_i2c_AS5600 = 0;
+    uint8_t use_spi_led_display = 1;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
     TRISBbits.TRISB5 = 0; // Pin as output for LED.
@@ -113,17 +118,17 @@ int main(void)
     TRISAbits.TRISA3 = 1; ANSELAbits.ANSELA3 = 0; WPUAbits.WPUA3 = 1; // Input SW3
     if (SW0) { use_uart = 1; } else { use_uart = 0; }
     if (SW1) { with_rts_cts = 1; } else { with_rts_cts = 0; }
-    if (SW2) { use_i2c_lcd = 1; } else { use_i2c_lcd = 0; }
+    if (SW2) { use_i2c_AS5600 = 1; } else { use_i2c_AS5600 = 0; }
     if (SW3) { use_spi_led_display = 1; } else { use_spi_led_display = 0; }
     //
     // Initialize the peripherals that are in play.
-    init_encoders();
+    init_AEAT_encoders();
     if (use_uart) {
         uart1_init(115200);
         __delay_ms(10); // Need a bit of delay to not miss the first characters.
         n = printf("\r\nMagnetic encoder readout.");
     }
-    if (use_i2c_lcd) {
+    if (use_i2c_lcd || use_i2c_AS5600) {
         i2c1_init();
         __delay_ms(50); // Let the LCD get itself sorted at power-up.
     }
@@ -135,7 +140,14 @@ int main(void)
     //
     timer2_wait();
     while (1) {
-        read_encoders(&a, &b);
+        read_AEAT_encoders(&a, &b);
+        if (use_i2c_AS5600) {
+            // We are going to replace reading A with the AS5600 data.
+            char_buffer[0] = 0x0c; // RAW ANGLE register, high byte
+            n = i2c1_write(ADDR_AS5600, 1, (uint8_t*)char_buffer);
+            n = i2c1_read(ADDR_AS5600, 2, (uint8_t*)char_buffer);
+            a = ((uint16_t)(char_buffer[0] & 0x0f)<<8) | (uint16_t)char_buffer[1];
+        }
         if (use_uart) {
             n = printf("\r\n%4u %4u", a, b);
         }
@@ -147,7 +159,7 @@ int main(void)
                 // the dangly wires on the prototype boards
                 // are a potential source of trouble.
                 char_buffer[0] = 0xfe; char_buffer[1] =  0x51;
-                n = i2c1_write(ADDR, 2, (uint8_t*)char_buffer);
+                n = i2c1_write(ADDR_LCD, 2, (uint8_t*)char_buffer);
                 __delay_ms(10); // Give the LCD time
                 lcd_count_clear = 120;
             } else {
@@ -181,6 +193,9 @@ int main(void)
         GREENLED = 0;
     }
     timer2_close();
+    if (use_i2c_lcd || use_i2c_AS5600) {
+        i2c1_close();
+    }
     if (use_uart) uart1_close();
     return 0; // Expect that the MCU will reset.
 } // end main
