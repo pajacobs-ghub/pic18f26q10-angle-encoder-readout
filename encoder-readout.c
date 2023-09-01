@@ -4,9 +4,10 @@
 // PJ 2023-02-05, 2023-03-08
 // PJ 2023-08-13 Update to include reading of AS5600 encoder.
 // PJ 2023-08-14 Get the output displaying values in degrees.
+// PJ 2023-09-01 Alister's scaling for the friction-wheel drive.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.0 2023-08-14"
+#define VERSION_STR "\r\nv1.1 2023-09-01"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -116,6 +117,7 @@ int main(void)
     uint8_t with_rts_cts = 1;
     uint8_t use_i2c_lcd = 0;
     uint8_t use_i2c_AS5600 = 0;
+    uint8_t scale_for_friction_wheel = 0;
     uint8_t use_spi_led_display = 1;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
@@ -132,7 +134,8 @@ int main(void)
     if (SW0) { use_uart = 1; } else { use_uart = 0; }
     if (SW1) { with_rts_cts = 1; } else { with_rts_cts = 0; }
     if (SW2) { use_i2c_AS5600 = 1; } else { use_i2c_AS5600 = 0; }
-    if (SW3) { use_spi_led_display = 1; } else { use_spi_led_display = 0; }
+    // 2023-09-01 Shorting SW3 will scale chan-A for Alister's friction wheel arrangement.
+    if (SW3) { scale_for_friction_wheel = 0; } else { scale_for_friction_wheel = 1; }
     //
     // Initialize the peripherals that are in play.
     init_AEAT_encoders();
@@ -195,6 +198,13 @@ int main(void)
         if (a_signed > 1800) a_signed -= 3600;
         if (b_signed < -1800) b_signed += 3600;
         if (b_signed > 1800) b_signed -= 3600;
+        // 4.1 Scale chan-A for Alister's friction wheels 108mm/60mm.
+        if (scale_for_friction_wheel) {
+            // Note that the following scaling may take the value outside the
+            // -180..180 degree range, but we expect the encoder angles to be
+            // somewhat restricted.
+            a_signed = (int16_t) ((a_signed * 9)/5);
+        }
         //
         // 5. Some output.
         if (use_uart) {
