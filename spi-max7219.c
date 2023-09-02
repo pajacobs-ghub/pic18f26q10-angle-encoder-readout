@@ -92,8 +92,8 @@ void spi2_led_display_signed(int16_t a, int16_t b)
     //         76543210
     // Assuming that we are given two 3-digit numbers.
     uint8_t digits[8];
-    uint16_t val_b = abs(b);
-    uint16_t val_a = abs(a);
+    uint16_t val_b = (uint16_t)abs(b);
+    uint16_t val_a = (uint16_t)abs(a);
     // Use BCD Code B 0x0a for negative sign or 0x0f for blank.
     digits[3] = (b < 0) ? 0x0a : 0x0f;
     digits[7] = (a < 0) ? 0x0a : 0x0f;

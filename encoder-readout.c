@@ -5,9 +5,10 @@
 // PJ 2023-08-13 Update to include reading of AS5600 encoder.
 // PJ 2023-08-14 Get the output displaying values in degrees.
 // PJ 2023-09-01 Alister's scaling for the friction-wheel drive.
+// PJ 2023-09-02 Get the friction-wheel scaling right-way-up.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.1 2023-09-01"
+#define VERSION_STR "\r\nv1.2 2023-09-02"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -141,9 +142,25 @@ int main(void)
     init_AEAT_encoders();
     if (use_uart) {
         uart1_init(115200);
-        __delay_ms(10); // Need a bit of delay to not miss the first characters.
+        __delay_ms(50); // Need a bit of delay to not miss the first characters.
+        uart1_flush_rx();
         n = printf("\r\nMagnetic encoder readout.");
         n = printf(VERSION_STR);
+        if (with_rts_cts) {
+            n = printf("\r\nUsing RTS/CTS.");
+        } else {
+            n = printf("\r\nNOT using RTS/CTS.");
+        }
+        if (use_i2c_AS5600) {
+            n = printf("\r\nUsing the AS5600 encoder on I2C.");
+        } else {
+            n = printf("\r\nNOT using AS5600 encoder on I2C.");
+        }
+        if (scale_for_friction_wheel) {
+            n = printf("\r\nScale Chan-A for friction wheel.");
+        } else {
+            n = printf("\r\nNOT scaling Chan-A for friction wheel.");
+        }
     }
     if (use_i2c_lcd || use_i2c_AS5600) {
         i2c1_init();
@@ -198,16 +215,14 @@ int main(void)
         if (a_signed > 1800) a_signed -= 3600;
         if (b_signed < -1800) b_signed += 3600;
         if (b_signed > 1800) b_signed -= 3600;
-        // 4.1 Scale chan-A for Alister's friction wheels 108mm/60mm.
+        // 4.1 Scale chan-A for Alister's friction wheels of 108mm and 60mm.
         if (scale_for_friction_wheel) {
-            // Note that the following scaling may take the value outside the
-            // -180..180 degree range, but we expect the encoder angles to be
-            // somewhat restricted.
-            a_signed = (int16_t) ((a_signed * 9)/5);
+            a_signed = (int16_t) ((a_signed * 5)/9);
         }
         //
         // 5. Some output.
         if (use_uart) {
+            uart1_flush_rx();
             n = printf("\r\n%4u %4u %4d.%1u %4d.%1u",
                     a_raw, b_raw, 
                     a_signed/10, abs(a_signed)%10,
@@ -256,10 +271,11 @@ int main(void)
         timer2_wait();
         GREENLED = 0;
     }
+    // Don't actually expect to arrive here but, just to keep things tidy...
     timer2_close();
     if (use_i2c_lcd || use_i2c_AS5600) {
         i2c1_close();
     }
     if (use_uart) uart1_close();
-    return 0; // Expect that the MCU will reset.
+    return 0; // Expect that the MCU will reset if we arrive here.
 } // end main
