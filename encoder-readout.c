@@ -6,9 +6,10 @@
 // PJ 2023-08-14 Get the output displaying values in degrees.
 // PJ 2023-09-01 Alister's scaling for the friction-wheel drive.
 // PJ 2023-09-02 Get the friction-wheel scaling right-way-up.
+// PJ 2023-09-13 Tune friction-wheel scaling for actual diameters.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.2 2023-09-02"
+#define VERSION_STR "\r\nv1.3 2023-09-13"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -76,6 +77,13 @@
 #define SW3 PORTAbits.RA3
 #define PUSHBUTTONA PORTBbits.RB4
 #define PUSHBUTTONB PORTCbits.RC1
+
+// There are two flavours of friction-wheel drive.
+// Alister's has a ratio 13/23 and reverses the direction.
+// Gerard's has a ratio 14/19 and keeps the same direction.
+// Choose Alister's by setting SCALE_ALISTER 1.
+// Choose Gerard's by setting SCALE_ALISTER 0.
+#define SCALE_ALISTER 0
 
 // Things needed for the I2C-LCD and AS5600 encoder
 #define NCBUF 20
@@ -157,7 +165,11 @@ int main(void)
             n = printf("\r\nNOT using AS5600 encoder on I2C.");
         }
         if (scale_for_friction_wheel) {
-            n = printf("\r\nScale Chan-A for friction wheel.");
+#           if SCALE_ALISTER
+            n = printf("\r\nScale Chan-A 13/23 for Alister's friction wheel.");
+#           else
+            n = printf("\r\nScale Chan-A 14/19 for Gerard's friction wheel.");
+#           endif
         } else {
             n = printf("\r\nNOT scaling Chan-A for friction wheel.");
         }
@@ -215,9 +227,15 @@ int main(void)
         if (a_signed > 1800) a_signed -= 3600;
         if (b_signed < -1800) b_signed += 3600;
         if (b_signed > 1800) b_signed -= 3600;
-        // 4.1 Scale chan-A for Alister's friction wheels of 108mm and 60mm.
+        // 4.1 Scale chan-A for Alister's friction wheels of 108mm and 61mm.
         if (scale_for_friction_wheel) {
-            a_signed = (int16_t) ((a_signed * 5)/9);
+            // With a max value of 1800 for tenths of degrees, we should not overflow.
+            // Note that we negate the result, too.
+#           if SCALE_ALISTER
+            a_signed = (int16_t) ((a_signed * -13)/23);
+#           else
+            a_signed = (int16_t) ((a_signed * 14)/19);
+#           endif
         }
         //
         // 5. Some output.
