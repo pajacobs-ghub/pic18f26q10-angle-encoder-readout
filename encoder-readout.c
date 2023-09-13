@@ -7,9 +7,10 @@
 // PJ 2023-09-01 Alister's scaling for the friction-wheel drive.
 // PJ 2023-09-02 Get the friction-wheel scaling right-way-up.
 // PJ 2023-09-13 Tune friction-wheel scaling for actual diameters.
+// PJ 2023-09-13 EEPROM storage for reference values.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.3 2023-09-13"
+#define VERSION_STR "\r\nv1.4 2023-09-13"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -64,6 +65,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include "eeprom.h"
 #include "uart.h"
 #include "timer2-free-run.h"
 #include "encoder.h"
@@ -112,8 +114,8 @@ int main(void)
 {
     int n;
     uint16_t a_raw, b_raw;
-    uint16_t a_ref = 0;
-    uint16_t b_ref = 0;
+    uint16_t a_ref;
+    uint16_t b_ref;
     int16_t a_signed, b_signed;
     int32_t big; // working variable for scaling to degrees
     //
@@ -146,6 +148,10 @@ int main(void)
     // 2023-09-01 Shorting SW3 will scale chan-A for Alister's friction wheel arrangement.
     if (SW3) { scale_for_friction_wheel = 0; } else { scale_for_friction_wheel = 1; }
     //
+    // Get ref values out of EEPROM.
+    a_ref = (uint16_t) (DATAEE_ReadByte(1) << 8) | DATAEE_ReadByte(0);
+    b_ref = (uint16_t) (DATAEE_ReadByte(3) << 8) | DATAEE_ReadByte(2);
+    //
     // Initialize the peripherals that are in play.
     init_AEAT_encoders();
     if (use_uart) {
@@ -173,6 +179,7 @@ int main(void)
         } else {
             n = printf("\r\nNOT scaling Chan-A for friction wheel.");
         }
+        n = printf("\r\na_ref: %4u  b_ref: %4u", a_ref, b_ref);
     }
     if (use_i2c_lcd || use_i2c_AS5600) {
         i2c1_init();
@@ -200,11 +207,15 @@ int main(void)
         // 2. If the push buttons are active (low), set the reference values.
         if (PUSHBUTTONA == 0) {
             a_ref = a_raw;
+            DATAEE_WriteByte(0, (uint8_t)(a_ref & 0xff)); // low byte
+            DATAEE_WriteByte(1, (uint8_t)((a_ref & 0xff00) >> 8)); // high byte
             __delay_ms(1000);
             n = printf("\r\na_ref = %4u", a_ref);
         }
         if (PUSHBUTTONB == 0) {
             b_ref = b_raw;
+            DATAEE_WriteByte(2, (uint8_t)(b_ref & 0xff)); // low byte
+            DATAEE_WriteByte(3, (uint8_t)((b_ref & 0xff00) >> 8)); // high byte
             __delay_ms(1000);
             n = printf("\r\nb_ref = %4u", b_ref);
         }
