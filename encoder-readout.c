@@ -85,7 +85,7 @@
 // Gerard's has a ratio 14/19 and keeps the same direction.
 // Choose Alister's by setting SCALE_ALISTER 1.
 // Choose Gerard's by setting SCALE_ALISTER 0.
-#define SCALE_ALISTER 0
+#define SCALE_ALISTER 1
 
 // Things needed for the I2C-LCD and AS5600 encoder
 #define NCBUF 20
