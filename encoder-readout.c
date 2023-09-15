@@ -8,9 +8,10 @@
 // PJ 2023-09-02 Get the friction-wheel scaling right-way-up.
 // PJ 2023-09-13 Tune friction-wheel scaling for actual diameters.
 // PJ 2023-09-13 EEPROM storage for reference values.
+// PJ 2023-09-15 Rework format of signed values sent to UART.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.4 2023-09-13"
+#define VERSION_STR "\r\nv1.5 2023-09-15"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -110,6 +111,31 @@ void display_to_lcd_unsigned(uint16_t a, uint16_t b)
     }
 }
 
+void values_to_string_buffer(int16_t a, int16_t b, char* chrs)
+{
+    // Assemble a string representation of the signed integer values
+    // that represent the values (that arrive in tenths of a degree).
+    // chrs is an array of characters, length 14.
+    // 0  1  2  3  4  5  6  7  8  9 10 11 12 13  index
+    // -  1  8  0  .  0     -  1  8  0  .  0 \0  content
+    uint16_t val_a = (uint16_t) abs(a);
+    uint16_t val_b = (uint16_t) abs(b);
+    chrs[6] = ' '; // space between numbers
+    chrs[13] = 0; // Terminator
+    chrs[4] = '.';
+    chrs[11] = '.';
+    // Signs
+    chrs[0] = (a < 0) ? '-' : ' ';
+    chrs[7] = (b < 0) ? '-' : ' ';
+    // Decimal digits for tenths of degree.
+    chrs[5] = '0' + val_a % 10; val_a /= 10;
+    chrs[12] = '0' + val_b % 10; val_b /= 10;
+    for (uint8_t i=0; i < 3; ++i) {
+        chrs[3-i] = '0' + val_a % 10; val_a /= 10;
+        chrs[10-i] = '0' + val_b % 10; val_b /= 10;
+    }
+}
+
 int main(void)
 {
     int n;
@@ -118,6 +144,7 @@ int main(void)
     uint16_t b_ref;
     int16_t a_signed, b_signed;
     int32_t big; // working variable for scaling to degrees
+    char digits_buffer[14]; // string of characters to display signed values
     //
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
@@ -252,10 +279,8 @@ int main(void)
         // 5. Some output.
         if (use_uart) {
             uart1_flush_rx();
-            n = printf("\r\n%4u %4u %4d.%1u %4d.%1u",
-                    a_raw, b_raw, 
-                    a_signed/10, abs(a_signed)%10,
-                    b_signed/10, abs(b_signed)%10);
+            values_to_string_buffer(a_signed, b_signed, digits_buffer);
+            n = printf("\r\n%4u %4u %s", a_raw, b_raw, digits_buffer);
         }
         if (use_i2c_lcd) {
             if (lcd_count_clear == 0) {
