@@ -1,0 +1,17 @@
+PIC18F26Q10-I/SP pin assignments for encoder readout
+
+  RESET      !MCLR/RE3  1 |\/| 28 RB7         ICSP-DAT
+  --               RA0  2 |  | 27 RB6         ICSP-CLK
+  --               RA1  3 |  | 26 RB5         LED
+  --               RA2  4 |  | 25 RB4         --
+  --               RA3  5 |  | 24 RB3         SPI2-DO
+  CSn              RA4  6 |  | 23 RB2         SDI2-DI
+  CLK              RA5  7 |  | 22 RB1         SDI2-CLK
+  GND              VSS  8 |  | 21 RB0         SDI2-CSn
+  DI-B             RA7  9 |  | 20 VDD         +5V
+  DI-A             RA6 10 |  | 19 VSS         GND
+  --               RC0 11 |  | 18 RC7         MCU-RX1
+  --               RC1 12 |  | 17 RC6         MCU-TX1
+  HOST-RTS#        RC2 13 |  | 16 RC5         HOST-CTS#
+  I2C1-SCL         RC3 14 |__| 15 RC4         I2C1-SDA
+
