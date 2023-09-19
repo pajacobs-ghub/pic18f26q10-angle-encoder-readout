@@ -9,9 +9,10 @@
 // PJ 2023-09-13 Tune friction-wheel scaling for actual diameters.
 // PJ 2023-09-13 EEPROM storage for reference values.
 // PJ 2023-09-15 Rework format of signed values sent to UART.
+// PJ 2023-09-18 Increase LED refresh rate for Jeremy.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.5 2023-09-15"
+#define VERSION_STR "\r\nv1.6 2023-09-18"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -313,7 +314,7 @@ int main(void)
                 // spi2_led_display_unsigned(a_raw, b_raw);
                 // Display integral degrees only to 7-segment LED display.
                 spi2_led_display_signed(a_signed/10, b_signed/10);
-                led_count_display = 2;
+                led_count_display = 0; // every pass for Jeremy
             } else {
                 led_count_display--;
             }
