@@ -105,7 +105,7 @@ void uart1_flush_rx(void)
     }
 }
 
-char getch(void)
+int getch(void)
 {
     char c;
     // Let the PC/Host know that it is clear to send.
@@ -122,12 +122,12 @@ char getch(void)
         NOP();
         RC1STAbits.CREN = 1;
     }
-    return c;
+    return (int)c;
 }
 
 char getche(void)
 {
-    char data = getch();
+    char data = (char)getch();
     putch(data); // echo the character
     return data;
 }

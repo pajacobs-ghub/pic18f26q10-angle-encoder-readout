@@ -7,7 +7,7 @@ void uart1_init(long baud);
 void putch(char data);
 __bit kbhit(void);
 void uart1_flush_rx(void);
-char getch(void);
+int getch(void);
 char getche(void);
 void uart1_close(void);
 
