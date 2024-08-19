@@ -200,7 +200,7 @@ int main(void)
         spi2_init();
         max7219_init();
     }
-    timer2_init(15, 8); // 15 * 2.064ms * 8 = 248ms period
+    timer2_init(7, 8); // 7 * 2.064ms * 8 = 116ms period
     //
     timer2_wait();
     while (1) {
