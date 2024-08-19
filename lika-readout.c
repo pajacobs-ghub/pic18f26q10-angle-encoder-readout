@@ -72,7 +72,7 @@
 #include "eeprom.h"
 #include "uart.h"
 #include "timer2-free-run.h"
-#include "encoder.h"
+#include "lika-as36.h"
 #include "i2c.h"
 #include "spi-max7219.h"
 
@@ -157,8 +157,6 @@ int main(void)
     uint8_t use_uart = 1;
     uint8_t with_rts_cts = 1;
     uint8_t use_i2c_lcd = 0;
-    uint8_t use_i2c_AS5600 = 0;
-    uint8_t scale_for_friction_wheel = 0;
     uint8_t use_spi_led_display = 1;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
@@ -174,44 +172,27 @@ int main(void)
     TRISAbits.TRISA3 = 1; ANSELAbits.ANSELA3 = 0; WPUAbits.WPUA3 = 1; // Input SW3
     if (SW0) { use_uart = 1; } else { use_uart = 0; }
     if (SW1) { with_rts_cts = 1; } else { with_rts_cts = 0; }
-    if (SW2) { use_i2c_AS5600 = 1; } else { use_i2c_AS5600 = 0; }
-    // 2023-09-01 Shorting SW3 will scale chan-A for Alister's friction wheel arrangement.
-    if (SW3) { scale_for_friction_wheel = 0; } else { scale_for_friction_wheel = 1; }
     //
     // Get ref values out of EEPROM.
     a_ref = (uint16_t) (DATAEE_ReadByte(1) << 8) | DATAEE_ReadByte(0);
     b_ref = (uint16_t) (DATAEE_ReadByte(3) << 8) | DATAEE_ReadByte(2);
     //
     // Initialize the peripherals that are in play.
-    init_AEAT_encoders();
+    init_AS36_encoders();
     if (use_uart) {
         uart1_init(115200);
         __delay_ms(50); // Need a bit of delay to not miss the first characters.
         uart1_flush_rx();
-        n = printf("\r\nMagnetic encoder readout.");
+        n = printf("\r\nLike AS36 encoder readout.");
         n = printf(VERSION_STR);
         if (with_rts_cts) {
             n = printf("\r\nUsing RTS/CTS.");
         } else {
             n = printf("\r\nNOT using RTS/CTS.");
         }
-        if (use_i2c_AS5600) {
-            n = printf("\r\nUsing the AS5600 encoder on I2C.");
-        } else {
-            n = printf("\r\nNOT using AS5600 encoder on I2C.");
-        }
-        if (scale_for_friction_wheel) {
-#           if SCALE_ALISTER
-            n = printf("\r\nScale Chan-A 13/23 for Alister's friction wheel.");
-#           else
-            n = printf("\r\nScale Chan-A 14/19 for Gerard's friction wheel.");
-#           endif
-        } else {
-            n = printf("\r\nNOT scaling Chan-A for friction wheel.");
-        }
         n = printf("\r\na_ref: %4u  b_ref: %4u", a_ref, b_ref);
     }
-    if (use_i2c_lcd || use_i2c_AS5600) {
+    if (use_i2c_lcd) {
         i2c1_init();
         __delay_ms(50); // Let the LCD get itself sorted at power-up.
     }
@@ -224,16 +205,7 @@ int main(void)
     timer2_wait();
     while (1) {
         // 1. Read the raw values from the sensors.
-        read_AEAT_encoders(&a_raw, &b_raw);
-        if (use_i2c_AS5600) {
-            // We are going to replace reading A with the AS5600 data.
-            char_buffer[0] = 0x0c; // RAW ANGLE register, high byte
-            n = i2c1_write(ADDR_AS5600, 1, (uint8_t*)char_buffer);
-            n = i2c1_read(ADDR_AS5600, 2, (uint8_t*)char_buffer);
-            uint8_t err = i2c1_get_error_flag();
-            if (err && use_uart) { printf("  i2c err=%u", err); }
-            a_raw = ((uint16_t)(char_buffer[0] & 0x0f)<<8) | (uint16_t)char_buffer[1];
-        }
+        read_AS36_encoders(&a_raw, &b_raw);
         // 2. If the push buttons are active (low), set the reference values.
         if (PUSHBUTTONA == 0) {
             a_ref = a_raw;
@@ -252,32 +224,16 @@ int main(void)
         a_signed = (int16_t)a_raw - (int16_t)a_ref;
         b_signed = (int16_t)b_raw - (int16_t)b_ref;
         // 3. Convert to units of 1/10 degree.
-        big = (long)a_signed * 225;
-        if (use_i2c_AS5600) {
-            // AS5600 sensor range is 4096. 3600/4096 == 225/256
-            a_signed = (int16_t) (big/256);
-        } else {
-            // AEAT sensor range is 1024. 3600/1024 == 225/64
-            a_signed = (int16_t) (big/64);
-        }
-        // AEAT sensor range is 1024.
-        big = (long)b_signed * 225;
-        b_signed = (int16_t) (big/64);
+        big = (int32_t)a_signed * 225;
+        // AS36 sensor range is 65536. 3600/65536 == 225/4096
+        a_signed = (int16_t) (big/4096);
+        big = (int32_t)b_signed * 225;
+        b_signed = (int16_t) (big/4096);
         // 4. Bring into -180 to 180 degree range by wrapping around.
         if (a_signed < -1800) a_signed += 3600;
         if (a_signed > 1800) a_signed -= 3600;
         if (b_signed < -1800) b_signed += 3600;
         if (b_signed > 1800) b_signed -= 3600;
-        // 4.1 Scale chan-A for Alister's friction wheels of 108mm and 61mm.
-        if (scale_for_friction_wheel) {
-            // With a max value of 1800 for tenths of degrees, we should not overflow.
-            // Note that we negate the result, too.
-#           if SCALE_ALISTER
-            a_signed = (int16_t) ((a_signed * -13)/23);
-#           else
-            a_signed = (int16_t) ((a_signed * 14)/19);
-#           endif
-        }
         //
         // 5. Some output.
         if (use_uart) {
@@ -330,9 +286,7 @@ int main(void)
     }
     // Don't actually expect to arrive here but, just to keep things tidy...
     timer2_close();
-    if (use_i2c_lcd || use_i2c_AS5600) {
-        i2c1_close();
-    }
+    if (use_i2c_lcd) { i2c1_close(); }
     if (use_uart) uart1_close();
     return 0; // Expect that the MCU will reset if we arrive here.
 } // end main
