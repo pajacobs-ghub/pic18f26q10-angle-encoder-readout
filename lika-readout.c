@@ -12,9 +12,10 @@
 // PJ 2023-09-15 Rework format of signed values sent to UART.
 // PJ 2023-09-18 Increase LED refresh rate for Jeremy.
 // PJ 2024-08-18 Version 2 will support the Lika optical encoders.
+// PJ 2024-08-21 Increase reported resolution to 1/100 degree.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.99 2024-08-18"
+#define VERSION_STR "\r\nv2.0 2024-08-21"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -117,25 +118,29 @@ void display_to_lcd_unsigned(uint16_t a, uint16_t b)
 void values_to_string_buffer(int16_t a, int16_t b, char* chrs)
 {
     // Assemble a string representation of the signed integer values
-    // that represent the values (that arrive in tenths of a degree).
-    // chrs is an array of characters, length 14.
-    // 0  1  2  3  4  5  6  7  8  9 10 11 12 13  index
-    // -  1  8  0  .  0     -  1  8  0  .  0 \0  content
+    // that represent the values (that arrive in 1/100 of a degree).
+    // Expected values are in range -18000 through 18000.
+    // chrs is an array of characters, length 16.
+    // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15  index
+    // -  1  8  0  .  0  0     -  1  8  0  .  0  0 \0  content
     uint16_t val_a = (uint16_t) abs(a);
     uint16_t val_b = (uint16_t) abs(b);
-    chrs[6] = ' '; // space between numbers
-    chrs[13] = 0; // Terminator
+    chrs[7] = ' '; // space between numbers
+    chrs[15] = 0; // Terminator
     chrs[4] = '.';
-    chrs[11] = '.';
+    chrs[12] = '.';
     // Signs
     chrs[0] = (a < 0) ? '-' : ' ';
-    chrs[7] = (b < 0) ? '-' : ' ';
-    // Decimal digits for tenths of degree.
+    chrs[8] = (b < 0) ? '-' : ' ';
+    // Decimal digits for 1/100 degree.
+    chrs[6] = '0' + val_a % 10; val_a /= 10;
+    chrs[14] = '0' + val_b % 10; val_b /= 10;
+    // Decimal digits for 1/10 degree
     chrs[5] = '0' + val_a % 10; val_a /= 10;
-    chrs[12] = '0' + val_b % 10; val_b /= 10;
+    chrs[13] = '0' + val_b % 10; val_b /= 10;
     for (uint8_t i=0; i < 3; ++i) {
         chrs[3-i] = '0' + val_a % 10; val_a /= 10;
-        chrs[10-i] = '0' + val_b % 10; val_b /= 10;
+        chrs[11-i] = '0' + val_b % 10; val_b /= 10;
     }
 }
 
@@ -145,9 +150,9 @@ int main(void)
     uint16_t a_raw, b_raw;
     uint16_t a_ref;
     uint16_t b_ref;
-    int16_t a_signed, b_signed;
+    int32_t a_signed, b_signed; // 32-bit to store angles in 1/100 degree resolution.
     int32_t big; // working variable for scaling to degrees
-    char digits_buffer[14]; // string of characters to display signed values
+    char digits_buffer[16]; // string of characters to display signed values
     //
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
@@ -221,24 +226,24 @@ int main(void)
             __delay_ms(1000);
             n = printf("\r\nb_ref = %4u", b_ref);
         }
-        a_signed = (int16_t)a_raw - (int16_t)a_ref;
-        b_signed = (int16_t)b_raw - (int16_t)b_ref;
+        a_signed = (int32_t)a_raw - (int32_t)a_ref;
+        b_signed = (int32_t)b_raw - (int32_t)b_ref;
         // 3. Convert to units of 1/10 degree.
-        big = (int32_t)a_signed * 225;
-        // AS36 sensor range is 65536. 3600/65536 == 225/4096
-        a_signed = (int16_t) (big/4096);
-        big = (int32_t)b_signed * 225;
-        b_signed = (int16_t) (big/4096);
+        // AS36 sensor range is 65536. 36000/65536 == 1125/2048
+        big = a_signed * 1125;
+        a_signed = big/2048;
+        big = b_signed * 1125;
+        b_signed = big/2048;
         // 4. Bring into -180 to 180 degree range by wrapping around.
-        if (a_signed < -1800) a_signed += 3600;
-        if (a_signed > 1800) a_signed -= 3600;
-        if (b_signed < -1800) b_signed += 3600;
-        if (b_signed > 1800) b_signed -= 3600;
+        if (a_signed < -18000) a_signed += 36000;
+        if (a_signed > 18000) a_signed -= 36000;
+        if (b_signed < -18000) b_signed += 36000;
+        if (b_signed > 18000) b_signed -= 36000;
         //
         // 5. Some output.
         if (use_uart) {
             uart1_flush_rx();
-            values_to_string_buffer(a_signed, b_signed, digits_buffer);
+            values_to_string_buffer((int16_t)a_signed, (int16_t)b_signed, digits_buffer);
             n = printf("\r\n%4u %4u %s", a_raw, b_raw, digits_buffer);
         }
         if (use_i2c_lcd) {
@@ -271,7 +276,7 @@ int main(void)
             if (led_count_display == 0) {
                 // spi2_led_display_unsigned(a_raw, b_raw);
                 // Display integral degrees only to 7-segment LED display.
-                spi2_led_display_signed(a_signed/10, b_signed/10);
+                spi2_led_display_signed((int16_t)(a_signed/100), (int16_t)(b_signed/100));
                 led_count_display = 0; // every pass for Jeremy
             } else {
                 led_count_display--;
