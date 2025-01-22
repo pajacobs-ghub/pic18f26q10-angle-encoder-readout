@@ -10,9 +10,11 @@
 // PJ 2023-09-13 EEPROM storage for reference values.
 // PJ 2023-09-15 Rework format of signed values sent to UART.
 // PJ 2023-09-18 Increase LED refresh rate for Jeremy.
+// PJ 2025-01-22 Backport some of the Lika AS36 code (1/100 degree units)
+//               Handle the variety of resolutions for AEAT magnetic encoders.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv1.6 2023-09-18"
+#define VERSION_STR "\r\nv3.0 2025-01-22"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -82,13 +84,6 @@
 #define PUSHBUTTONA PORTBbits.RB4
 #define PUSHBUTTONB PORTCbits.RC1
 
-// There are two flavours of friction-wheel drive.
-// Alister's has a ratio 13/23 and reverses the direction.
-// Gerard's has a ratio 14/19 and keeps the same direction.
-// Choose Alister's by setting SCALE_ALISTER 1.
-// Choose Gerard's by setting SCALE_ALISTER 0.
-#define SCALE_ALISTER 1
-
 // Things needed for the I2C-LCD and AS5600 encoder
 #define NCBUF 20
 static char char_buffer[NCBUF];
@@ -115,25 +110,29 @@ void display_to_lcd_unsigned(uint16_t a, uint16_t b)
 void values_to_string_buffer(int16_t a, int16_t b, char* chrs)
 {
     // Assemble a string representation of the signed integer values
-    // that represent the values (that arrive in tenths of a degree).
-    // chrs is an array of characters, length 14.
-    // 0  1  2  3  4  5  6  7  8  9 10 11 12 13  index
-    // -  1  8  0  .  0     -  1  8  0  .  0 \0  content
+    // that represent the values (that arrive in 1/100 of a degree).
+    // Expected values are in range -18000 through 18000.
+    // chrs is an array of characters, length 16.
+    // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15  index
+    // -  1  8  0  .  0  0     -  1  8  0  .  0  0 \0  content
     uint16_t val_a = (uint16_t) abs(a);
     uint16_t val_b = (uint16_t) abs(b);
-    chrs[6] = ' '; // space between numbers
-    chrs[13] = 0; // Terminator
+    chrs[7] = ' '; // space between numbers
+    chrs[15] = 0; // Terminator
     chrs[4] = '.';
-    chrs[11] = '.';
+    chrs[12] = '.';
     // Signs
     chrs[0] = (a < 0) ? '-' : ' ';
-    chrs[7] = (b < 0) ? '-' : ' ';
-    // Decimal digits for tenths of degree.
+    chrs[8] = (b < 0) ? '-' : ' ';
+    // Decimal digits for 1/100 degree.
+    chrs[6] = '0' + val_a % 10; val_a /= 10;
+    chrs[14] = '0' + val_b % 10; val_b /= 10;
+    // Decimal digits for 1/10 degree
     chrs[5] = '0' + val_a % 10; val_a /= 10;
-    chrs[12] = '0' + val_b % 10; val_b /= 10;
+    chrs[13] = '0' + val_b % 10; val_b /= 10;
     for (uint8_t i=0; i < 3; ++i) {
         chrs[3-i] = '0' + val_a % 10; val_a /= 10;
-        chrs[10-i] = '0' + val_b % 10; val_b /= 10;
+        chrs[11-i] = '0' + val_b % 10; val_b /= 10;
     }
 }
 
@@ -143,9 +142,9 @@ int main(void)
     uint16_t a_raw, b_raw;
     uint16_t a_ref;
     uint16_t b_ref;
-    int16_t a_signed, b_signed;
+    int32_t a_signed, b_signed; // 32-bit to store angles in 1/100 degree resolution.
     int32_t big; // working variable for scaling to degrees
-    char digits_buffer[14]; // string of characters to display signed values
+    char digits_buffer[16]; // string of characters to display signed values
     //
     uint8_t lcd_count_display = 0;
     uint8_t lcd_count_clear = 0;
@@ -156,7 +155,7 @@ int main(void)
     uint8_t with_rts_cts = 1;
     uint8_t use_i2c_lcd = 0;
     uint8_t use_i2c_AS5600 = 0;
-    uint8_t scale_for_friction_wheel = 0;
+    uint8_t assume_AEAT_12bit = 1;
     uint8_t use_spi_led_display = 1;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
@@ -173,8 +172,8 @@ int main(void)
     if (SW0) { use_uart = 1; } else { use_uart = 0; }
     if (SW1) { with_rts_cts = 1; } else { with_rts_cts = 0; }
     if (SW2) { use_i2c_AS5600 = 1; } else { use_i2c_AS5600 = 0; }
-    // 2023-09-01 Shorting SW3 will scale chan-A for Alister's friction wheel arrangement.
-    if (SW3) { scale_for_friction_wheel = 0; } else { scale_for_friction_wheel = 1; }
+    if (SW3) { assume_AEAT_12bit = 1; } else { assume_AEAT_12bit = 0; }
+    uint8_t aeat_nbits = (assume_AEAT_12bit) ? 12 : 10;
     //
     // Get ref values out of EEPROM.
     a_ref = (uint16_t) (DATAEE_ReadByte(1) << 8) | DATAEE_ReadByte(0);
@@ -186,7 +185,7 @@ int main(void)
         uart1_init(115200);
         __delay_ms(50); // Need a bit of delay to not miss the first characters.
         uart1_flush_rx();
-        n = printf("\r\nMagnetic encoder readout.");
+        n = printf("\r\nReadout for AEAT-901x and AS5600 magnetic angle encoders.");
         n = printf(VERSION_STR);
         if (with_rts_cts) {
             n = printf("\r\nUsing RTS/CTS.");
@@ -198,14 +197,10 @@ int main(void)
         } else {
             n = printf("\r\nNOT using AS5600 encoder on I2C.");
         }
-        if (scale_for_friction_wheel) {
-#           if SCALE_ALISTER
-            n = printf("\r\nScale Chan-A 13/23 for Alister's friction wheel.");
-#           else
-            n = printf("\r\nScale Chan-A 14/19 for Gerard's friction wheel.");
-#           endif
-        } else {
-            n = printf("\r\nNOT scaling Chan-A for friction wheel.");
+        if (assume_AEAT_12bit) {
+            n = printf("\r\nAssuming 12-bit AEAT-9012 encoders.");
+        } else { 
+            n = printf("\r\nAssuming 10-bit AEAT-9010 encoders.");
         }
         n = printf("\r\na_ref: %4u  b_ref: %4u", a_ref, b_ref);
     }
@@ -217,12 +212,12 @@ int main(void)
         spi2_init();
         max7219_init();
     }
-    timer2_init(15, 8); // 15 * 2.064ms * 8 = 248ms period
+    timer2_init(7, 8); // 7 * 2.064ms * 8 = 116ms period
     //
     timer2_wait();
     while (1) {
         // 1. Read the raw values from the sensors.
-        read_AEAT_encoders(&a_raw, &b_raw);
+        read_AEAT_encoders(&a_raw, &b_raw, aeat_nbits);
         if (use_i2c_AS5600) {
             // We are going to replace reading A with the AS5600 data.
             char_buffer[0] = 0x0c; // RAW ANGLE register, high byte
@@ -247,40 +242,31 @@ int main(void)
             __delay_ms(1000);
             n = printf("\r\nb_ref = %4u", b_ref);
         }
-        a_signed = (int16_t)a_raw - (int16_t)a_ref;
-        b_signed = (int16_t)b_raw - (int16_t)b_ref;
-        // 3. Convert to units of 1/10 degree.
-        big = (long)a_signed * 225;
+        a_signed = (int32_t)a_raw - (int32_t)a_ref;
+        b_signed = (int32_t)b_raw - (int32_t)b_ref;
+        // 3. Convert to units of 1/100 degree.
+        //    12-bit sensor range is 4096. 36000/4096 == 1125/128
+        //    10-bit sensor range is 1024. 36000/1024 == 1125/32
+        big = a_signed * 1125;
+        int16_t aeat_divisor = (assume_AEAT_12bit)? 128 : 32;
         if (use_i2c_AS5600) {
-            // AS5600 sensor range is 4096. 3600/4096 == 225/256
-            a_signed = (int16_t) (big/256);
+            a_signed = big/128;
         } else {
-            // AEAT sensor range is 1024. 3600/1024 == 225/64
-            a_signed = (int16_t) (big/64);
+            a_signed = big/aeat_divisor;
         }
         // AEAT sensor range is 1024.
-        big = (long)b_signed * 225;
-        b_signed = (int16_t) (big/64);
+        big = b_signed * 1125;
+        b_signed = big/aeat_divisor;
         // 4. Bring into -180 to 180 degree range by wrapping around.
-        if (a_signed < -1800) a_signed += 3600;
-        if (a_signed > 1800) a_signed -= 3600;
-        if (b_signed < -1800) b_signed += 3600;
-        if (b_signed > 1800) b_signed -= 3600;
-        // 4.1 Scale chan-A for Alister's friction wheels of 108mm and 61mm.
-        if (scale_for_friction_wheel) {
-            // With a max value of 1800 for tenths of degrees, we should not overflow.
-            // Note that we negate the result, too.
-#           if SCALE_ALISTER
-            a_signed = (int16_t) ((a_signed * -13)/23);
-#           else
-            a_signed = (int16_t) ((a_signed * 14)/19);
-#           endif
-        }
+        if (a_signed < -18000) a_signed += 36000;
+        if (a_signed > 18000) a_signed -= 36000;
+        if (b_signed < -18000) b_signed += 36000;
+        if (b_signed > 18000) b_signed -= 36000;
         //
         // 5. Some output.
         if (use_uart) {
             uart1_flush_rx();
-            values_to_string_buffer(a_signed, b_signed, digits_buffer);
+            values_to_string_buffer((int16_t)a_signed, (int16_t)b_signed, digits_buffer);
             n = printf("\r\n%4u %4u %s", a_raw, b_raw, digits_buffer);
         }
         if (use_i2c_lcd) {
@@ -313,7 +299,7 @@ int main(void)
             if (led_count_display == 0) {
                 // spi2_led_display_unsigned(a_raw, b_raw);
                 // Display integral degrees only to 7-segment LED display.
-                spi2_led_display_signed(a_signed/10, b_signed/10);
+                spi2_led_display_signed((int16_t)a_signed/100, (int16_t)b_signed/100);
                 led_count_display = 0; // every pass for Jeremy
             } else {
                 led_count_display--;

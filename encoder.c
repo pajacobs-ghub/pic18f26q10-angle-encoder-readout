@@ -32,7 +32,7 @@ void init_AEAT_encoders(void)
     
 }
 
-void read_AEAT_encoders(uint16_t *result_a, uint16_t *result_b)
+void read_AEAT_encoders(uint16_t *result_a, uint16_t *result_b, uint8_t nbits)
 {
     uint8_t i;
     uint16_t bits_a, bits_b;
@@ -41,7 +41,7 @@ void read_AEAT_encoders(uint16_t *result_a, uint16_t *result_b)
     bits_b = 0;
     CSn = 0; // select the encoders
     __delay_us(1);
-    for (i=0; i < 10; i++) {
+    for (i=0; i < nbits; i++) {
         // Shift previous bits left.
         bits_a <<= 1; bits_b <<= 1;
         // Clock next bit.
