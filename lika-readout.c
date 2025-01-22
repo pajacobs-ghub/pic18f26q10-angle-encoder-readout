@@ -85,13 +85,6 @@
 #define PUSHBUTTONA PORTBbits.RB4
 #define PUSHBUTTONB PORTCbits.RC1
 
-// There are two flavours of friction-wheel drive.
-// Alister's has a ratio 13/23 and reverses the direction.
-// Gerard's has a ratio 14/19 and keeps the same direction.
-// Choose Alister's by setting SCALE_ALISTER 1.
-// Choose Gerard's by setting SCALE_ALISTER 0.
-#define SCALE_ALISTER 1
-
 // Things needed for the I2C-LCD and AS5600 encoder
 #define NCBUF 20
 static char char_buffer[NCBUF];
@@ -188,7 +181,7 @@ int main(void)
         uart1_init(115200);
         __delay_ms(50); // Need a bit of delay to not miss the first characters.
         uart1_flush_rx();
-        n = printf("\r\nLike AS36 encoder readout.");
+        n = printf("\r\nLika AS36 encoder readout.");
         n = printf(VERSION_STR);
         if (with_rts_cts) {
             n = printf("\r\nUsing RTS/CTS.");
@@ -228,7 +221,7 @@ int main(void)
         }
         a_signed = (int32_t)a_raw - (int32_t)a_ref;
         b_signed = (int32_t)b_raw - (int32_t)b_ref;
-        // 3. Convert to units of 1/10 degree.
+        // 3. Convert to units of 1/100 degree.
         // AS36 sensor range is 65536. 36000/65536 == 1125/2048
         big = a_signed * 1125;
         a_signed = big/2048;
