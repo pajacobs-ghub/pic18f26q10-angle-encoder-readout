@@ -12,9 +12,10 @@
 // PJ 2023-09-18 Increase LED refresh rate for Jeremy.
 // PJ 2025-01-22 Backport some of the Lika AS36 code (1/100 degree units)
 //               Handle the variety of resolutions for AEAT magnetic encoders.
+// PJ 2025-01-23 Gerard's request for comma-separated values
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv3.0 2025-01-22"
+#define VERSION_STR "\r\nv3.1 2025-01-23"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -114,10 +115,10 @@ void values_to_string_buffer(int16_t a, int16_t b, char* chrs)
     // Expected values are in range -18000 through 18000.
     // chrs is an array of characters, length 16.
     // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15  index
-    // -  1  8  0  .  0  0     -  1  8  0  .  0  0 \0  content
+    // -  1  8  0  .  0  0  ,  -  1  8  0  .  0  0 \0  content
     uint16_t val_a = (uint16_t) abs(a);
     uint16_t val_b = (uint16_t) abs(b);
-    chrs[7] = ' '; // space between numbers
+    chrs[7] = ','; // comma between numbers
     chrs[15] = 0; // Terminator
     chrs[4] = '.';
     chrs[12] = '.';
@@ -267,7 +268,7 @@ int main(void)
         if (use_uart) {
             uart1_flush_rx();
             values_to_string_buffer((int16_t)a_signed, (int16_t)b_signed, digits_buffer);
-            n = printf("\r\n%4u %4u %s", a_raw, b_raw, digits_buffer);
+            n = printf("\r\n%4u,%4u,%s", a_raw, b_raw, digits_buffer);
         }
         if (use_i2c_lcd) {
             if (lcd_count_clear == 0) {
