@@ -13,9 +13,11 @@
 // PJ 2025-01-22 Backport some of the Lika AS36 code (1/100 degree units)
 //               Handle the variety of resolutions for AEAT magnetic encoders.
 // PJ 2025-01-23 Gerard's request for comma-separated values
+// PJ 2025-01-29 Limit reference values restored from EEPROM
+//               to the range of the specific encoder.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv3.1 2025-01-23"
+#define VERSION_STR "\r\nv3.2 2025-01-29"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -177,8 +179,21 @@ int main(void)
     uint8_t aeat_nbits = (assume_AEAT_12bit) ? 12 : 10;
     //
     // Get ref values out of EEPROM.
+    // With a freshly-programmed chip, all of the bits read from the EEPROM
+    // will be 1, and the resulting reference value will be 0xffff and
+    // out of range for a 10-bit or 12-bit encoder.
     a_ref = (uint16_t) (DATAEE_ReadByte(1) << 8) | DATAEE_ReadByte(0);
     b_ref = (uint16_t) (DATAEE_ReadByte(3) << 8) | DATAEE_ReadByte(2);
+    if (use_i2c_AS5600 || assume_AEAT_12bit) {
+        a_ref &= 0x0fff;
+    } else {
+        a_ref &= 0x03ff;
+    }
+    if (assume_AEAT_12bit) {
+        b_ref &= 0x0fff;
+    } else {
+        b_ref &= 0x03ff;
+    }
     //
     // Initialize the peripherals that are in play.
     init_AEAT_encoders();
