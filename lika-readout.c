@@ -15,9 +15,10 @@
 // PJ 2024-08-21 Increase reported resolution to 1/100 degree.
 // PJ 2025-02-03 Andy's request to put \n at end of UART messages.
 //               Switch to allow higher frequency reporting.
+// PJ 2025-02-04 Add forgotten comma.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "v2.1 2025-02-03"
+#define VERSION_STR "v2.2 2025-02-04"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -120,7 +121,7 @@ void values_to_string_buffer(int16_t a, int16_t b, char* chrs)
     // -  1  8  0  .  0  0     -  1  8  0  .  0  0 \0  content
     uint16_t val_a = (uint16_t) abs(a);
     uint16_t val_b = (uint16_t) abs(b);
-    chrs[7] = ' '; // space between numbers
+    chrs[7] = ','; // comma between numbers
     chrs[15] = 0; // Terminator
     chrs[4] = '.';
     chrs[12] = '.';
