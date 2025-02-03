@@ -13,9 +13,11 @@
 // PJ 2023-09-18 Increase LED refresh rate for Jeremy.
 // PJ 2024-08-18 Version 2 will support the Lika optical encoders.
 // PJ 2024-08-21 Increase reported resolution to 1/100 degree.
+// PJ 2025-02-03 Andy's request to put \n at end of UART messages.
+//               Switch to allow higher frequency reporting.
 //
 // This version string will be printed shortly after MCU reset.
-#define VERSION_STR "\r\nv2.0 2024-08-21"
+#define VERSION_STR "v2.1 2025-02-03"
 //
 // Configuration Bit Settings (generated from Config Memory View)
 // CONFIG1L
@@ -156,6 +158,7 @@ int main(void)
     uint8_t with_rts_cts = 1;
     uint8_t use_i2c_lcd = 0;
     uint8_t use_spi_led_display = 1;
+    uint8_t fast_cycle = 1;
     //
     OSCFRQbits.HFFRQ = 0b0110; // Select 32MHz.
     TRISBbits.TRISB5 = 0; // Pin as output for LED.
@@ -168,7 +171,7 @@ int main(void)
     TRISAbits.TRISA1 = 1; ANSELAbits.ANSELA1 = 0; WPUAbits.WPUA1 = 1; // Input SW1
     TRISAbits.TRISA2 = 1; ANSELAbits.ANSELA2 = 0; WPUAbits.WPUA2 = 1; // Input SW2
     TRISAbits.TRISA3 = 1; ANSELAbits.ANSELA3 = 0; WPUAbits.WPUA3 = 1; // Input SW3
-    if (SW0) { use_uart = 1; } else { use_uart = 0; }
+    if (SW0) { fast_cycle = 1; } else { fast_cycle = 0; }
     if (SW1) { with_rts_cts = 1; } else { with_rts_cts = 0; }
     //
     // Get ref values out of EEPROM.
@@ -181,14 +184,14 @@ int main(void)
         uart1_init(115200);
         __delay_ms(50); // Need a bit of delay to not miss the first characters.
         uart1_flush_rx();
-        n = printf("\r\nLika AS36 encoder readout.");
-        n = printf(VERSION_STR);
+        n = printf("Lika AS36 encoder readout.\r\n");
+        n = printf("%s\r\n", VERSION_STR);
         if (with_rts_cts) {
-            n = printf("\r\nUsing RTS/CTS.");
+            n = printf("Using RTS/CTS.\r\n");
         } else {
-            n = printf("\r\nNOT using RTS/CTS.");
+            n = printf("NOT using RTS/CTS.\r\n");
         }
-        n = printf("\r\na_ref: %4u  b_ref: %4u", a_ref, b_ref);
+        n = printf("a_ref: %4u  b_ref: %4u\r\n", a_ref, b_ref);
     }
     if (use_i2c_lcd) {
         i2c1_init();
@@ -198,7 +201,13 @@ int main(void)
         spi2_init();
         max7219_init();
     }
-    timer2_init(7, 8); // 7 * 2.064ms * 8 = 116ms period
+    if (fast_cycle) {
+        timer2_init(3, 8); // 3 * 2.064ms * 8 = 50ms period
+        n = printf("Cycle period is 50ms.\r\n");
+    } else {
+        timer2_init(7, 8); // 7 * 2.064ms * 8 = 116ms period
+        n = printf("Cycle period is 116ms.\r\n");
+    }
     //
     timer2_wait();
     while (1) {
@@ -210,14 +219,14 @@ int main(void)
             DATAEE_WriteByte(0, (uint8_t)(a_ref & 0xff)); // low byte
             DATAEE_WriteByte(1, (uint8_t)((a_ref & 0xff00) >> 8)); // high byte
             __delay_ms(1000);
-            n = printf("\r\na_ref = %4u", a_ref);
+            n = printf("a_ref = %4u\r\n", a_ref);
         }
         if (PUSHBUTTONB == 0) {
             b_ref = b_raw;
             DATAEE_WriteByte(2, (uint8_t)(b_ref & 0xff)); // low byte
             DATAEE_WriteByte(3, (uint8_t)((b_ref & 0xff00) >> 8)); // high byte
             __delay_ms(1000);
-            n = printf("\r\nb_ref = %4u", b_ref);
+            n = printf("b_ref = %4u\r\n", b_ref);
         }
         a_signed = (int32_t)a_raw - (int32_t)a_ref;
         b_signed = (int32_t)b_raw - (int32_t)b_ref;
@@ -237,7 +246,7 @@ int main(void)
         if (use_uart) {
             uart1_flush_rx();
             values_to_string_buffer((int16_t)a_signed, (int16_t)b_signed, digits_buffer);
-            n = printf("\r\n%4u %4u %s", a_raw, b_raw, digits_buffer);
+            n = printf("%4u,%4u,%s\r\n", a_raw, b_raw, digits_buffer);
         }
         if (use_i2c_lcd) {
             if (lcd_count_clear == 0) {
